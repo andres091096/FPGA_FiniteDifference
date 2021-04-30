@@ -15,7 +15,7 @@ while True:
 
 f.close()
 
-fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(10, 4),
+fig, axes = plt.subplots(nrows=1, ncols=4, figsize=(12, 6),
                          sharex=True, sharey=True)
 ax = axes.ravel()
 
@@ -56,6 +56,21 @@ rtl_reconstruction = np.uint8(rtl_reconstruction)
 rtl_reconstruction = np.reshape(rtl_reconstruction,(pixels,pixels))
 
 
+rtl_divergence = []
+f = open("data/divU.bin","rb")
+while True:
+    byte=f.read(4)
+    if not byte:
+        break;
+    value = struct.unpack('f', byte)[0]
+    rtl_divergence.append(value)
+
+f.close()
+rtl_divergence = np.array(rtl_divergence)
+rtl_divergence = (rtl_divergence.astype(np.float32) / max(rtl_divergence))*255
+rtl_divergence = np.uint8(rtl_divergence)
+rtl_divergence = np.reshape(rtl_divergence,(pixels,pixels))
+
 
 ax[0].imshow(img, cmap=plt.cm.gray)
 ax[0].set_title('Original image')
@@ -65,4 +80,7 @@ ax[1].set_title('CPU X-Derivate')
 
 ax[2].imshow(rtl_reconstruction, cmap=plt.cm.gray)
 ax[2].set_title('RTL X-Derivate')
+
+ax[3].imshow(rtl_divergence, cmap=plt.cm.gray)
+ax[3].set_title('RTL Divergence')
 plt.show()

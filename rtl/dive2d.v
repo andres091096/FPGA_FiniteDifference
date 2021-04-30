@@ -1,37 +1,43 @@
-
-module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx_addr, o_DyValid, o_DxValid, o_bussy);
+module dive2d (i_clk, i_reset, i_datax, i_datay, i_start, o_read, o_data, o_address, o_valid, o_bussy);
   parameter WIDTH = 32, ADD_W = 12;
   localparam l = 6; //log2(px); px =64
+  localparam BANKW = 32*64; //log2(px); px =64
   input  wire                      i_clk;
   input  wire                      i_reset;
-  input  wire signed [(WIDTH-1):0] i_data;
+  input  wire signed [(WIDTH-1):0] i_datax;
+  input  wire signed [(WIDTH-1):0] i_datay;
   input  wire                      i_start;
-  output wire signed [(WIDTH-1):0] o_datax;
-  output wire signed [(WIDTH-1):0] o_datay;
-  output wire        [(ADD_W-1):0] o_address;
-  output wire        [(ADD_W-1):0] o_Dx_addr;
-  output wire                      o_DyValid;
-  output wire                      o_DxValid;
+  output wire                      o_read;
+  output wire signed [(WIDTH-1):0] o_data;
+  output wire signed [(ADD_W-1):0] o_address;
+  output wire                      o_valid;
   output wire                      o_bussy;
   //////////////////////////////////////////////////////////////////////////////
   // Registers and wires
   //////////////////////////////////////////////////////////////////////////////
-  reg  signed [(WIDTH-1):0] r_datax;
-  reg  signed [(WIDTH-1):0] r_datay;
-  reg  signed [(WIDTH-1):0] r_DyOp1; //First operand
-  reg  signed [(WIDTH-1):0] r_DyOp2; //Second operand
-  reg  signed [(WIDTH-1):0] r_DyOp0; //First Column operand
-  wire signed [(WIDTH-1):0] r_OutFIFO; //
+  reg  signed [(WIDTH-1):0] r_datax; //Dx
+  reg  signed [(WIDTH-1):0] r_datay; //Dy
+  reg  signed [(WIDTH-1):0] r_outx; //Dx
+  reg  signed [(WIDTH-1):0] r_outy; //Dy
+  reg  signed [(WIDTH-1):0] r_DyOp1; //First operand Dy
+  reg  signed [(WIDTH-1):0] r_DyOp2; //Second operand Dy
+  reg  signed [(WIDTH-1):0] r_DyOp0; //First Column operand Dy
+  reg  signed [(WIDTH-1):0] r_DxOp1; //First operand Dx
+  wire signed [(WIDTH-1):0] r_OutFIFO; //Second operand Dx
+  reg         [(BANKW-1):0] Bank_y; //register bank for Dy result
+  reg         [(BANKW-1):0] Bank_x; //register bank for Dx result
+  reg         [64:0]        Bank_valid; //register bank for Dx result
   reg         [ADD_W:0]     counter;
-  reg         [(ADD_W-1):0] w_DxAddr;
+  reg         [(ADD_W-1):0] w_address;
   reg         [(l-1):0]     column_counter;
   reg         [(l-1):0]     fifo_counter;
   reg                       counter_en;
+  reg                       r_maxcolum;
   reg                       column_en;
-  reg                       r_DyValid;
-  reg                       r_DxValid;
+  reg                       r_Valid;
   reg                       DyOp1_en;
   reg                       DyOp2_en;
+  reg                       DxOp1_en;
   reg                       datay_en;
   reg                       datax_en;
   wire                      FIFO_wr;
@@ -42,13 +48,16 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
   wire signed [(WIDTH-1):0] w_op1; //First operand multiplexor
 
   initial counter        = 0;
-  initial w_DxAddr       = 0;
   initial fifo_counter   = 0;
   initial column_counter = 0;
 
   always @ (posedge i_clk) begin
     if(DyOp1_en)
-      r_DyOp1 <= i_data;
+      r_DyOp1 <= i_datay;
+  end
+  always @ (posedge i_clk) begin
+    if(DxOp1_en)
+      r_DxOp1 <= i_datax;
   end
   always @ (posedge i_clk) begin
     if(&column_counter|save_Op0) //column_counter == px-1;
@@ -62,19 +71,42 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
   //        * El IDLE debe ser mas un reset de los conadores y del FIFO para el Todo anterior.
  assign FIFO_wr = DyOp2_en;
   fifo  #(.WIDTH(WIDTH), .M_WIDTH(l))
-          f0(i_clk, FIFO_wr, r_DyOp1, FIFO_rd,  r_OutFIFO);
+          f0(i_clk, FIFO_wr, r_DxOp1, FIFO_rd,  r_OutFIFO);
 
   assign w_op1 = (&column_counter) ? r_DyOp0 : r_DyOp1; //column_counter == px-1
 
   always @ (posedge i_clk) begin
     if(datay_en)
-      r_datay <= w_op1-r_DyOp2;
+      r_datay <= r_DyOp2 - w_op1;
   end
   always @ (posedge i_clk) begin
     if(datax_en)
-      r_datax <= r_DyOp1-r_OutFIFO;
+      r_datax <= r_OutFIFO-r_DxOp1;
   end
-
+  // registe banks
+  always @ (posedge i_clk) begin
+    Bank_y     <= {Bank_y[(63*WIDTH)-1:0],r_datay};
+    Bank_x     <= {Bank_x[(63*WIDTH)-1:0],r_datax};
+    Bank_valid <= {Bank_valid[63:0],datax_en};
+  end
+  //
+  always @ (posedge i_clk) begin
+    r_outx <= Bank_x[(BANKW-1):BANKW-WIDTH];
+  end
+  always @ (posedge i_clk) begin
+    r_maxcolum <= &(column_counter);
+  end
+  always @ (posedge i_clk) begin
+    if (r_maxcolum)
+      r_outy <= r_datay;
+    else //column_counter == 0
+      r_outy <= Bank_y[(BANKW-1):BANKW-WIDTH];
+  end
+  //
+  always @ (posedge i_clk) begin
+    if(r_Valid)
+      w_address <= w_address+1;
+  end
   always @ (posedge i_clk) begin
     if (counter_en) begin
       counter <= counter+1;
@@ -86,16 +118,12 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
     end
   end
   always @ (posedge i_clk) begin
-    if (DyOp1_en) begin
+    if (DxOp1_en) begin
       fifo_counter <= fifo_counter+1;
     end
   end
   assign full_FIFO = &fifo_counter; //column_counter start one clock cycle before the fifo_wr signal and can predict the full_fifo signal.
-  always @ (posedge i_clk) begin
-    if (r_DxValid) begin
-      w_DxAddr <= w_DxAddr+1;
-    end
-  end
+
   //////////////////////////////////////////////////////////////////////////////
   // Control (FSM)
   //////////////////////////////////////////////////////////////////////////////
@@ -182,6 +210,8 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
         counter_en <= 1'b0;
         column_en  <= 1'b0;
         DyOp1_en   <= 1'b0;
+        DxOp1_en   <= 1'b0;
+        DxOp1_en   <= 1'b0;
         save_Op0   <= 1'b0;
         DyOp2_en   <= 1'b0;
         datay_en   <= 1'b0;
@@ -193,6 +223,7 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
         counter_en <= 1'b1;
         column_en  <= 1'b0;
         DyOp1_en   <= 1'b0;
+        DxOp1_en   <= 1'b0;
         save_Op0   <= 1'b0;
         DyOp2_en   <= 1'b0;
         datay_en   <= 1'b0;
@@ -204,6 +235,7 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
         counter_en <= 1'b1;
         column_en  <= 1'b0;
         DyOp1_en   <= 1'b1;
+        DxOp1_en   <= 1'b1;
         save_Op0   <= 1'b0;
         DyOp2_en   <= 1'b0;
         datay_en   <= 1'b0;
@@ -215,6 +247,7 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
         counter_en <= 1'b1;
         column_en  <= 1'b0;
         DyOp1_en   <= 1'b1;
+        DxOp1_en   <= 1'b1;
         save_Op0   <= 1'b1;
         DyOp2_en   <= 1'b1;
         datay_en   <= 1'b0;
@@ -226,6 +259,7 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
         counter_en <= 1'b1;
         column_en  <= 1'b1;
         DyOp1_en   <= 1'b1;
+        DxOp1_en   <= 1'b1;
         save_Op0   <= 1'b0;
         DyOp2_en   <= 1'b1;
         datay_en   <= 1'b1;
@@ -237,6 +271,7 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
         counter_en <= 1'b1;
         column_en  <= 1'b1;
         DyOp1_en   <= 1'b1;
+        DxOp1_en   <= 1'b1;
         save_Op0   <= 1'b0;
         DyOp2_en   <= 1'b1;
         datay_en   <= 1'b1;
@@ -248,6 +283,7 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
         counter_en <= 1'b1;
         column_en  <= 1'b1;
         DyOp1_en   <= 1'b1;
+        DxOp1_en   <= 1'b1;
         save_Op0   <= 1'b0;
         DyOp2_en   <= 1'b1;
         datay_en   <= 1'b1;
@@ -259,6 +295,7 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
         counter_en <= 1'b1;
         column_en  <= 1'b1;
         DyOp1_en   <= 1'b1;
+        DxOp1_en   <= 1'b1;
         save_Op0   <= 1'b0;
         DyOp2_en   <= 1'b1;
         datay_en   <= 1'b1;
@@ -270,6 +307,7 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
         counter_en <= 1'b1;
         column_en  <= 1'b1;
         DyOp1_en   <= 1'b1;
+        DxOp1_en   <= 1'b1;
         save_Op0   <= 1'b0;
         DyOp2_en   <= 1'b1;
         datay_en   <= 1'b1;
@@ -281,8 +319,9 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
         counter_en <= 1'b1;
         column_en  <= 1'b1;
         DyOp1_en   <= 1'b1;
+        DxOp1_en   <= 1'b1;
         save_Op0   <= 1'b0;
-        DyOp2_en   <= 1'b0;
+        DyOp2_en   <= 1'b1;
         datay_en   <= 1'b1;
         datax_en   <= 1'b1;
         FIFO_rd    <= 1'b1;
@@ -292,31 +331,34 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
         counter_en <= 1'b1;
         column_en  <= 1'b1;
         DyOp1_en   <= 1'b1;
+        DxOp1_en   <= 1'b1;
         save_Op0   <= 1'b0;
-        DyOp2_en   <= 1'b0;
-        datay_en   <= 1'b0;
+        DyOp2_en   <= 1'b1;
+        datay_en   <= 1'b1;
         datax_en   <= 1'b1;
         FIFO_rd    <= 1'b1;
       end
       S11 : begin
         r_bussy    <= 1'b1;
         counter_en <= 1'b0;
-        column_en  <= 1'b0;
+        column_en  <= 1'b1;
         DyOp1_en   <= 1'b0;
+        DxOp1_en   <= 1'b0;
         save_Op0   <= 1'b0;
-        DyOp2_en   <= 1'b0;
-        datay_en   <= 1'b0;
+        DyOp2_en   <= 1'b1;
+        datay_en   <= 1'b1;
         datax_en   <= 1'b1;
         FIFO_rd    <= 1'b1;
       end
       S12 : begin
         r_bussy    <= 1'b1;
         counter_en <= 1'b0;
-        column_en  <= 1'b0;
+        column_en  <= 1'b1;
         DyOp1_en   <= 1'b0;
+        DxOp1_en   <= 1'b0;
         save_Op0   <= 1'b0;
         DyOp2_en   <= 1'b0;
-        datay_en   <= 1'b0;
+        datay_en   <= 1'b1;
         datax_en   <= 1'b0;
         FIFO_rd    <= 1'b0;
       end
@@ -325,6 +367,7 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
         counter_en <= 1'b0;
         column_en  <= 1'b0;
         DyOp1_en   <= 1'b0;
+        DxOp1_en   <= 1'b0;
         save_Op0   <= 1'b0;
         DyOp2_en   <= 1'b0;
         datay_en   <= 1'b0;
@@ -334,18 +377,15 @@ module diff2d(i_clk, i_reset, i_data, i_start, o_datax, o_datay, o_address, o_Dx
     endcase
 /* verilator lint_on COMBDLY */
   always @ (posedge i_clk) begin
-    r_DyValid <= datay_en;
-    r_DxValid <= datax_en;
+    r_Valid <= Bank_valid[64];
   end
   //////////////////////////////////////////////////////////////////////////////
   // Output logic
   //////////////////////////////////////////////////////////////////////////////
-  assign o_datax   = r_datax;
-  assign o_datay   = r_datay;
-  assign o_address = counter[(ADD_W-1):0];
-  assign o_Dx_addr = w_DxAddr;
-  assign o_DyValid = r_DyValid;
-  assign o_DxValid = r_DxValid;
-  assign o_bussy   = r_bussy;
+  assign o_data   = r_outx + r_outy;
+  assign o_address = w_address + 12'b000001000000;
+  assign o_valid  = r_Valid;
+  assign o_bussy  = r_bussy;
+  assign o_read   = counter_en;
 
 endmodule // diff_2d

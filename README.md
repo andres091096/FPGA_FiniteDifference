@@ -23,24 +23,24 @@ This give you the information if the implementation pass the test or not.  If yo
 $ gtkwave fwht_trace.vcd
 ```
 
-|        Input         | Current State | Next State |   Output   |                                      |
-| :------------------: | :-----------: | :--------: | :--------: | ------------------------------------ |
-|       `Start`        |    *IDLE*     |    *S1*    | `00000000` |                                      |
-|         `X`          |     *S1*      |    *S2*    | `11000000` | Save Input 1 **(Dy)**                |
-|         `X`          |     *S2*      |    *S3*    | `11010000` | Save Input 1 **(Dy)**                |
-|         `X`          |     *S3*      |    *S3*    | `11011000` | Save Input 2 **(Dy)** and Write FIFO |
-|      ` ~o_full`      |     *S4*      |    *S3*    | `11111100` | Full FIFO                            |
-|      ` o_full`       |     *S4*      |    *S4*    | `11111100` | Full FIFO                            |
-|         `X`          |     *S5*      |    *S5*    | `11111101` | Read FIFO                            |
-|         `X`          |     *S6*      |    *S6*    | `11111101` | Save Input 2 **(Dx)**                |
-|     `(&Counter)`     |     *S7*      |    *S7*    | `11111111` | Wait and save results                |
-|    `~(&Counter)`     |     *S7*      |    *S6*    | `11111111` | Wait and save results                |
-|         `X`          |     *S8*      |    *S8*    | `11111111` | Save last Input 2 **(Dy)**           |
-|         `X`          |     *S9*      |    *S9*    | `11110111` | Save last Result **(Dy)**            |
-| `(&column_counter)`  |     *S10*     |    *S9*    | `11110011` | Wait And save results                |
-| `~(&column_counter)` |     *S10*     |   *S10*    | `11110011` | Wait And save results                |
-|         `X`          |     *S11*     |   *S111*   | `10000010` | Save last Input 2 **(Dx)**           |
-|         `X`          |     *S12*     |   *IDLE*   | `10000010` | Save last Result **(Dx)**            |
+|       Input        | Current State | Next State |   Output   |                                      |
+| :----------------: | :-----------: | :--------: | :--------: | ------------------------------------ |
+|      `Start`       |    *IDLE*     |    *S1*    | `00000000` |                                      |
+|        `X`         |     *S1*      |    *S2*    | `11000000` | Save Input 1 **(Dy)**                |
+|        `X`         |     *S2*      |    *S3*    | `11010000` | Save Input 1 **(Dy)**                |
+|        `X`         |     *S3*      |    *S4*    | `11011000` | Save Input 2 **(Dy)** and Write FIFO |
+|     ` ~o_full`     |     *S4*      |    *S3*    | `11111100` | Full FIFO                            |
+|     ` o_full`      |     *S4*      |    *S4*    | `11111100` | Full FIFO                            |
+|        `X`         |     *S5*      |    *S5*    | `11111101` | Read FIFO                            |
+|        `X`         |     *S6*      |    *S6*    | `11111101` | Save Input 2 **(Dx)**                |
+|    `(&Counter)`    |     *S7*      |    *S7*    | `11111111` | Wait and save results                |
+|   `~(&Counter)`    |     *S7*      |    *S8*    | `11111111` | Wait and save results                |
+|        `X`         |     *S8*      |    *S8*    | `11111111` | Save last Input 2 **(Dy)**           |
+|        `X`         |     *S9*      |   *S10*    | `11110111` | Save last Result **(Dy)**            |
+| `(&fifo_counter)`  |     *S10*     |   *S10*    | `11110011` | Wait And save results                |
+| `~(&fifo_counter)` |     *S10*     |   *S11*    | `11110011` | Wait And save results                |
+|        `X`         |     *S11*     |   *S111*   | `10000011` | Save last Input 2 **(Dx)**           |
+|        `X`         |     *S12*     |   *IDLE*   | `10000000` | Save last Result **(Dx)**            |
 
 
 

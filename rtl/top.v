@@ -14,12 +14,13 @@ module top(i_clk, i_reset, i_start, o_valid, o_datax, o_datay);
   wire               w_DxValid;
   wire               w_DyValid;
 
-  rom rom_int(i_clk, w_address, w_data);
+  rom #(.WIDTH(32), .DEPTH(4096), .INIT_F("U_fixed_point.mem"), .ADDRW(12))
+        rom_int(i_clk, w_address, w_data);
 
   diff2d #(.WIDTH(32), .ADD_W(12))
          diff2d_inst(i_clk, i_reset, w_data, i_start, o_datax, o_datay, w_address, w_Dxaddr, w_DyValid, w_DxValid, w_bussy);
 
-  assign o_valid = w_DxValid;
+  assign o_valid = w_DyValid;
 
 endmodule // top
 /* verilator lint_on UNUSED */

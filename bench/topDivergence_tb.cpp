@@ -3,11 +3,11 @@
 // Engineer: Andrés M. Manjarrés G.
 //
 // Create Date: 23.04.2021
-// File Name: top_tb.cpp
+// File Name: topDivergence_tb.cpp
 // Project Name:
 // Description:
 //
-// Dependencies: top.v
+// Dependencies: topDivergence.v
 // Revision:
 // Revision 0.01 - File Created
 // Additional Comments:
@@ -40,7 +40,7 @@
 #include <stdlib.h>     /* calloc, exit, free */
 #include <iostream>
 #include <fstream>
-#include "Vtop.h"
+#include "VtopDivergence.h"
 #include "verilated.h"
 #include "verilated_vcd_c.h"
 using namespace std;
@@ -97,18 +97,43 @@ float * Uy(float U[], int px, int py)
     for (int ix = 0; ix < px; ix++) {
       if (ix == px-1){ //Limite
         Uy_vec[I(ix,iy)] = (U[I(0,iy)] - U[I(ix,iy)]);
-        //printf("Uy[%i] = %f = %f - %f\n",I(ix,iy),Uy_vec[I(ix,iy)], U[I(ix+1,iy)], U[I(ix,iy)]);
       }else{
         Uy_vec[I(ix,iy)] = (U[I(ix+1,iy)] - U[I(ix,iy)]);
-        //printf("Uy[%i] = %f =  %f - %f\n",I(ix,iy),Uy_vec[I(ix,iy)], U[I(ix+1,iy)], U[I(ix,iy)]);
       }
     }
   }
-
   return Uy_vec;
 }
 
-void tick(int tickcount, Vtop *tb, VerilatedVcdC* tfp) {
+float * Div(float Ux[], float Uy[], int px, int py) {
+  static float  div [INPUT_SIZE];  //n=4096 because the use of static I must put a constant size
+  for (int i = 0; i < px*py; i++) {
+    div[i] = 0;
+  }
+
+  for (int iy = 0; iy < py; iy++) {
+    for (int ix = 0; ix < px; ix++) {
+        if (iy == 0){ //Limite
+          div[I(ix,iy)] += (Ux[I(ix,px-1)] - Ux[I(ix,iy)]); //DxUx;
+          //printf("r_datax[%i] = %f = %f - %f\n", I(ix,iy), (Ux[I(ix,px-1)] - Ux[I(ix,iy)]), Ux[I(ix,iy-1)], Ux[I(ix,iy)]  );
+        }else{
+          div[I(ix,iy)] += (Ux[I(ix,iy-1)] - Ux[I(ix,iy)]); //DxUx;
+          //printf("r_datax[%i] = %f = %f - %f\n", I(ix,iy), (Ux[I(ix,iy-1)] - Ux[I(ix,iy)]), Ux[I(ix,iy-1)], Ux[I(ix,iy)]  );
+        }
+        if (ix == 0){ //Limite
+          div[I(ix,iy)] += (Uy[I(px-1,iy)] - Uy[I(ix,iy)]); //DyUy;
+          //printf("r_datay[%i] = %f = %f - %f\n", I(ix,iy), (Uy[I(px-1,iy)] - Uy[I(ix,iy)]), Uy[I(px-1,iy)], Uy[I(ix,iy)]  );
+        }else{
+          div[I(ix,iy)] += (Uy[I(ix-1,iy)] - Uy[I(ix,iy)]); //DyUy;
+          //printf("r_datay[%i] = %f = %f - %f\n", I(ix,iy), (Uy[I(ix-1,iy)] - Uy[I(ix,iy)]), Uy[I(ix-1,iy)], Uy[I(ix,iy)]  );
+        }
+        //printf("div[%i] = %f , %f, %f\n", I(ix,iy), div[I(ix,iy)], Ux[I(ix,iy)], Uy[I(ix,iy)]  );
+    }
+  }
+  return div;
+}
+
+void tick(int tickcount, VtopDivergence *tb, VerilatedVcdC* tfp) {
 
 	tb->eval();
 	if(tfp)
@@ -125,19 +150,18 @@ void tick(int tickcount, Vtop *tb, VerilatedVcdC* tfp) {
 				tfp->flush();
 			}
 }
-
 int main(int argc, char const *argv[]) {
   int check_status = 0;
 	Verilated::commandArgs(argc, argv);
-	Vtop *tb = new Vtop; // Instantiate our design
+	VtopDivergence *tb = new VtopDivergence; // Instantiate our design
 
   //Generate a trace
 	Verilated::traceEverOn(true);
 	VerilatedVcdC* tfp = new VerilatedVcdC;
 	tb->trace(tfp,99);
-	tfp->open("top_trace.vcd");
+	tfp->open("topDivergence_trace.vcd");
   unsigned tickcount=0;
-  /* Apply Reset*/
+
 	tick(++tickcount,tb,tfp);
 	tb->i_reset = 1;
   tb->i_start = 0;
@@ -152,60 +176,90 @@ int main(int argc, char const *argv[]) {
 
   int i = 0;
   std::ifstream fin("data/U.bin", std::ios::binary);
-  ofstream myFile;
-  myFile.open("U_fixed_point.mem", ios::out );
-
   while (fin.read(reinterpret_cast<char*>(&f), sizeof(uint8_t))){
     U_in[i]  = f;
-    myFile << hex << float_to_fixed((float)f) << "\n";
-    i = i+1;
+    i=i+1;
   }
   fin.close();
-  myFile << dec;
-  myFile.close();
 
   float *Uy_out;
+  float *Ux_out;
   Uy_out = Uy(U_in, 64, 64);
+  Ux_out = Ux(U_in, 64, 64);
+  float Ux_in[INPUT_SIZE];
+  float Uy_in[INPUT_SIZE];
+  ofstream myFile;
+  myFile.open("Ux_fixed_point.mem", ios::out );
+  ofstream myFile2;
+  myFile2.open("Uy_fixed_point.mem", ios::out );
+  float r1, r2;
+  for (int i = 0; i < INPUT_SIZE; i++) {
+    /*
+    r1 = -50.5 + static_cast <float> (rand()) / ( static_cast <float> (RAND_MAX/(255.0+50.5)));
+    r2 = 80.5 + static_cast <float> (rand()) / ( static_cast <float> (RAND_MAX/(255.0-80.5)));
+    Ux_in[i] = r1;
+    Uy_in[i] = r2;
+    myFile << hex << float_to_fixed(r1) << "\n";
+    myFile2 << hex << float_to_fixed(r2) << "\n";
+    */
+
+    Ux_in[i] = *(Ux_out+i);
+    Uy_in[i] = *(Uy_out+i);
+    myFile << hex << float_to_fixed(*(Ux_out+i)) << "\n";
+    myFile2 << hex << float_to_fixed(*(Uy_out+i)) << "\n";
+  }
+  myFile << dec;
+  myFile.close();
+  myFile2 << dec;
+  myFile2.close();
+
+  float *div_out;
+  div_out = Div(Ux_in, Uy_in, 64, 64);
+
 
   tick(++tickcount,tb,tfp);
   tb->i_start = 1;
   tick(++tickcount,tb,tfp);
   tb->i_start = 0;
 
+
   float tol_err = 1e-2;
   float diff;
   float cpu_version[INPUT_SIZE];
   float rtl_version[INPUT_SIZE];
-  int   j = 0;
-  for (int i = 0; i < 8000; i++) {
+  int j = 0;
+  int err_count = 0;
+  for (int i = 0; i < 20000; i++) {
     tick(++tickcount,tb,tfp);
     if (tb->o_valid){
-      cpu_version[j] = *(Uy_out+j);
-      rtl_version[j] = fixed_to_float((fixed_point_t)tb->o_datay);
+
+      cpu_version[j] = *(div_out+j);
+      rtl_version[j] = fixed_to_float((fixed_point_t)tb->o_data);
       diff =  rtl_version[j] - cpu_version[j];
       if (abs(diff) > tol_err ){
         check_status = 1;
+        err_count += 1;
         printf("Data Mismatch: data : %i : Expected %f -> Got %f \n", j, cpu_version[j] , rtl_version[j]);
       }
       j = j+1;
     }
+
   }
+
   if (j!=INPUT_SIZE){
     check_status = 1;
     printf("ERROR: data amount: Expected %i-> Got %i \n", INPUT_SIZE, j);
   }
-  /* Write Binary Format */
-  ofstream WriteFile ("data/cpu_Ux.bin", ios::out | ios::binary);
-  WriteFile.write ((char*)&cpu_version, INPUT_SIZE*sizeof(float));
-  WriteFile.close();
-  ofstream WriteFile2 ("data/rtl_Ux.bin", ios::out | ios::binary);
-  WriteFile2.write ((char*)&rtl_version, INPUT_SIZE*sizeof(float));
-  WriteFile2.close();
+
+
   if (check_status) {
-      printf("INFO: Test failed\n");
+      printf("INFO: Test failed because %i errors\n", err_count);
       return EXIT_FAILURE;
   } else {
       printf("INFO: Test completed successfully.\n");
+      ofstream WriteFile ("data/divU.bin", ios::out | ios::binary);
+      WriteFile.write ((char*)&rtl_version, INPUT_SIZE*sizeof(float));
+      WriteFile.close();
       return EXIT_SUCCESS;
   }
 
